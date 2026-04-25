@@ -1,0 +1,10 @@
+# Local-dev-only overrides. Auto-loaded by Compose alongside docker-compose.yml.
+# Excluded from rsync so production never sees these port mappings.
+services:
+  postgres:
+    ports:
+      - "5434:5432"
+
+  todo-service:
+    ports:
+      - "8080:8080"

@@ -1,0 +1,16 @@
+# Production overlay. Used as:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  todo-service:
+    environment:
+      VIRTUAL_HOST: todo.savuliak.com
+      VIRTUAL_PORT: "8080"
+      LETSENCRYPT_HOST: todo.savuliak.com
+      LETSENCRYPT_EMAIL: savuliak.roman@gmail.com
+    networks:
+      - default
+      - gateway-network
+
+networks:
+  gateway-network:
+    external: true

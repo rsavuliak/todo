@@ -1,0 +1,80 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_KEY_CI }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DO_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy files to droplet
+        run: |
+          rsync -avz --delete \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='docker-compose.override.yml' \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+            ./ "${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/home/deploy/todo-service"
+
+      - name: Build and start on droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}" << 'EOF'
+            set -euo pipefail
+            cd /home/deploy/todo-service
+            if [ ! -f .env ]; then
+              echo "ERROR: .env missing on server — provision it before deploying" >&2
+              exit 1
+            fi
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull postgres
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              up -d --build --remove-orphans
+          EOF
+
+      - name: Wait for healthy
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}" << 'EOF'
+            set -euo pipefail
+            cd /home/deploy/todo-service
+            for i in $(seq 1 30); do
+              status=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+                ps --format json todo-service 2>/dev/null \
+                | grep -o '"Health":"[^"]*"' | head -n1 | cut -d'"' -f4 || true)
+              if [ "$status" = "healthy" ]; then
+                echo "todo-service is healthy"
+                exit 0
+              fi
+              echo "attempt $i: status=${status:-unknown}, waiting..."
+              sleep 2
+            done
+            echo "ERROR: readiness probe timed out" >&2
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              logs todo-service --tail=80 >&2
+            exit 1
+          EOF
