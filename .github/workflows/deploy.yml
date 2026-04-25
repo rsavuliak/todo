@@ -73,7 +73,7 @@ jobs:
             "${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}" << 'EOF'
             set -euo pipefail
             cd /home/deploy/todo-service
-            for i in $(seq 1 30); do
+            for i in $(seq 1 90); do
               status=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml \
                 ps --format json todo-service 2>/dev/null \
                 | grep -o '"Health":"[^"]*"' | head -n1 | cut -d'"' -f4 || true)
