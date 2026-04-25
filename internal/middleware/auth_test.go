@@ -107,7 +107,10 @@ func TestAuth_ValidToken_UserIDInContext(t *testing.T) {
 	}
 }
 
-func TestAuth_OPTIONS_PassThrough(t *testing.T) {
+func TestAuth_OPTIONS_RequiresCookie(t *testing.T) {
+	// Auth middleware no longer short-circuits OPTIONS; the CORS middleware
+	// intercepts preflights before auth is reached in the actual router.
+	// In isolation, OPTIONS without a cookie returns 401.
 	mw := middleware.Auth(cfg())
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })
 
@@ -115,7 +118,7 @@ func TestAuth_OPTIONS_PassThrough(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/", nil)
 	mw(next).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("OPTIONS should pass through, got %d", rec.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 from auth middleware without cookie, got %d", rec.Code)
 	}
 }
